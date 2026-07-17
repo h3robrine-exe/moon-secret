@@ -185,10 +185,16 @@ const toast=(m,t)=>{const e=$("#toast");e.textContent=m;e.classList.add("on");cl
 function screen(n){["lock","pair","chat"].forEach(x=>$("#"+x).classList.remove("on"));$("#"+n).classList.add("on");}
 
 function waitIce(pc){
+  // Don't wait forever for ICE gathering. We just need *some* candidates.
+  // On same-WiFi the host candidates appear in <1s and that's enough.
+  // After 6s, if still gathering, use what we have.
   return new Promise(r=>{
     if(pc.iceGatheringState==="complete")return r();
-    const t=setTimeout(()=>{console.warn("ICE timeout");r()},15000); // 15s hard cap
-    pc.onicegatheringstatechange=()=>{if(pc.iceGatheringState==="complete"){clearTimeout(t);r()}};
+    let done=false;
+    const finish=()=>{if(done)return;done=true;clearTimeout(t);clearTimeout(hard);r()};
+    const t=setTimeout(finish,2500); // soft timeout — use what we have
+    const hard=setTimeout(finish,8000); // hard timeout — bail no matter what
+    pc.onicegatheringstatechange=()=>{if(pc.iceGatheringState==="complete")finish()};
   });
 }
 
