@@ -6,7 +6,7 @@
 <meta name="theme-color" content="#0a0005" />
 <meta name="color-scheme" content="dark" />
 <meta name="referrer" content="no-referrer" />
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' blob:; font-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' blob: wss://0.peerjs.com:443 https://0.peerjs.com; font-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'" />
 <meta name="robots" content="noindex,nofollow,noarchive,nosnippet" />
 <title>Moonlight</title>
 <link rel="manifest" href="manifest.webmanifest" />
@@ -20,7 +20,6 @@
   --moon:#f5f0e0;
   --glass:rgba(20,5,10,0.6); --glass-edge:rgba(192,57,43,0.3);
   --silver:rgba(232,232,240,0.18);
-  --r:14px;
   --shadow-red:0 0 24px rgba(192,57,43,0.4), 0 8px 32px rgba(0,0,0,0.7);
 }
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
@@ -33,29 +32,25 @@ button,input,textarea,select{font:inherit;color:inherit;background:none;border:0
 .ember{position:absolute;width:3px;height:3px;border-radius:50%;background:var(--moon);box-shadow:0 0 8px var(--blood-glow);opacity:0}
 .screen{position:fixed;inset:0;display:none;flex-direction:column;z-index:2}
 .screen.on{display:flex}
-.center{display:flex;align-items:center;justify-content:center;flex-direction:column;padding:14px;text-align:center;gap:10px;width:100%;height:100%;overflow-y:auto}
-h1.title{font-size:26px;margin:0;font-weight:600;letter-spacing:0.5px;background:linear-gradient(135deg,var(--moon),var(--blood-glow));-webkit-background-clip:text;background-clip:text;color:transparent}
-h2.subtitle{font-size:16px;margin:0;font-weight:600;color:var(--moon)}
-p.sub{color:var(--ink-dim);font-size:12px;margin:0;max-width:340px;line-height:1.45}
-.step{width:100%;max-width:380px;padding:12px;border-radius:14px;background:var(--glass);border:1px solid var(--glass-edge);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);display:flex;flex-direction:column;gap:8px}
-.step h3{margin:0;font-size:13px;color:var(--moon);font-weight:600;letter-spacing:0.5px}
-.step p{margin:0;font-size:11px;color:var(--ink-dim);line-height:1.4}
-.bigbox{width:100%;min-height:70px;max-height:120px;padding:10px;border-radius:12px;background:rgba(0,0,0,0.4);border:1px solid var(--silver);color:var(--ink);font-family:ui-monospace,monospace;font-size:10px;word-break:break-all;line-height:1.35;resize:none;overflow:auto}
-.bigbox:focus{border-color:var(--blood)}
-.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:12px 18px;border-radius:14px;background:linear-gradient(135deg,var(--blood-deep),var(--blood));color:#fff;font-weight:700;font-size:13px;letter-spacing:0.5px;cursor:pointer;border:1px solid rgba(255,255,255,0.1);box-shadow:var(--shadow-red);transition:transform .15s,filter .2s;-webkit-user-select:none;user-select:none}
+.center{flex-direction:column;padding:24px;text-align:center;gap:18px;width:100%;height:100%;display:flex;align-items:center;justify-content:center}
+h1.title{font-size:28px;margin:0;font-weight:600;letter-spacing:0.5px;background:linear-gradient(135deg,var(--moon),var(--blood-glow));-webkit-background-clip:text;background-clip:text;color:transparent}
+h2.subtitle{font-size:18px;margin:0;font-weight:600;color:var(--moon)}
+p.sub{color:var(--ink-dim);font-size:13px;margin:0;max-width:340px;line-height:1.5}
+input[type=password]{width:100%;max-width:320px;padding:14px 18px;border-radius:16px;background:var(--glass);border:1px solid var(--glass-edge);color:var(--ink);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);font-size:15px;text-align:center}
+input[type=password]:focus{border-color:var(--blood);box-shadow:0 0 0 3px rgba(192,57,43,0.18)}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:14px 22px;border-radius:16px;background:linear-gradient(135deg,var(--blood-deep),var(--blood));color:#fff;font-weight:700;font-size:14px;letter-spacing:0.5px;cursor:pointer;border:1px solid rgba(255,255,255,0.1);box-shadow:var(--shadow-red);transition:transform .15s,filter .2s;-webkit-user-select:none;user-select:none;width:100%;max-width:320px}
 .btn:hover{filter:brightness(1.1)}
 .btn:active{transform:scale(0.97)}
 .btn:disabled{opacity:0.4;cursor:not-allowed;filter:grayscale(0.5)}
-.btn.ghost{background:transparent;border:1px solid var(--silver);color:var(--ink);font-weight:500;box-shadow:none}
-.btn.ghost:hover{background:rgba(232,232,240,0.08)}
-input[type=password]{width:100%;max-width:340px;padding:13px 18px;border-radius:14px;background:var(--glass);border:1px solid var(--glass-edge);color:var(--ink);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);font-size:15px;text-align:center}
-input[type=password]:focus{border-color:var(--blood);box-shadow:0 0 0 3px rgba(192,57,43,0.18)}
-#moon{filter:drop-shadow(0 0 18px rgba(245,240,224,0.5));width:56px;height:56px;cursor:pointer;transition:transform .4s}
+.btn.ghost{background:transparent;border:1px solid var(--silver);color:var(--ink);font-weight:500;box-shadow:none;width:auto;padding:8px 14px;font-size:12px}
+#moon{filter:drop-shadow(0 0 18px rgba(245,240,224,0.5));width:60px;height:60px;cursor:pointer;transition:transform .4s}
 #moon:active{transform:scale(0.95)}
 .chat-head{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid rgba(192,57,43,0.12);background:linear-gradient(180deg,rgba(10,0,5,0.9),rgba(10,0,5,0.5));backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);position:relative;z-index:5}
-.status-pill{display:flex;align-items:center;gap:6px;padding:5px 10px;border-radius:999px;background:var(--glass);border:1px solid var(--glass-edge);font-size:11px;color:var(--ink-dim)}
-.dot{width:6px;height:6px;border-radius:50%;background:#5fd47f;box-shadow:0 0 8px #5fd47f}
-.dot.wait{background:#f0c14b;animation:pulse 1.4s ease-in-out infinite;box-shadow:none}
+.status-pill{display:flex;align-items:center;gap:8px;padding:5px 10px;border-radius:999px;background:var(--glass);border:1px solid var(--glass-edge);font-size:11px;color:var(--ink-dim)}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--ink-faint);transition:background .3s,box-shadow .3s}
+.dot.on{background:#5fd47f;box-shadow:0 0 8px #5fd47f}
+.dot.wait{background:#f0c14b;animation:pulse 1.4s ease-in-out infinite}
+.dot.err{background:#c0392b;box-shadow:0 0 8px #c0392b}
 @keyframes pulse{0%,100%{opacity:.4}50%{opacity:1}}
 #messages{flex:1;overflow-y:auto;padding:14px 12px 8px;display:flex;flex-direction:column;gap:6px;scroll-behavior:smooth;position:relative;z-index:2}
 .msg{display:flex;flex-direction:column;max-width:78%;animation:pop .25s cubic-bezier(.2,.9,.3,1.2)}
@@ -81,6 +76,8 @@ input[type=password]:focus{border-color:var(--blood);box-shadow:0 0 0 3px rgba(1
 .modal{position:fixed;inset:0;background:rgba(0,0,0,0.92);display:none;align-items:center;justify-content:center;z-index:50;padding:20px}
 .modal.on{display:flex}
 .modal img,.modal video{max-width:100%;max-height:90vh;border-radius:12px}
+.spinner{width:36px;height:36px;border:3px solid rgba(232,232,240,0.15);border-top-color:var(--blood-glow);border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
 @media (max-width:480px){h1.title{font-size:22px}}
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:0.01s !important;transition-duration:0.01s !important}}
 </style>
@@ -92,7 +89,7 @@ input[type=password]:focus{border-color:var(--blood);box-shadow:0 0 0 3px rgba(1
 <section id="lock" class="screen on">
   <div class="center">
     <div id="moon" role="img" aria-label="moon">
-      <svg viewBox="0 0 64 64" width="56" height="56">
+      <svg viewBox="0 0 64 64" width="60" height="60">
         <defs><radialGradient id="mg" cx="35%" cy="35%" r="65%"><stop offset="0%" stop-color="#fffbe8"/><stop offset="60%" stop-color="#f5f0e0"/><stop offset="100%" stop-color="#b8b29a"/></radialGradient></defs>
         <circle cx="32" cy="32" r="30" fill="rgba(245,240,224,0.15)"/>
         <circle cx="32" cy="32" r="22" fill="url(#mg)"/>
@@ -105,48 +102,25 @@ input[type=password]:focus{border-color:var(--blood);box-shadow:0 0 0 3px rgba(1
     <p class="sub">"two hearts. one channel. forever."</p>
     <form id="lockForm" style="display:flex;flex-direction:column;gap:10px;align-items:center;width:100%">
       <input type="password" id="pw" placeholder="password" autocomplete="off" />
-      <button class="btn" id="enterBtn" type="submit" style="max-width:280px">enter</button>
+      <button class="btn" id="enterBtn" type="submit">enter</button>
       <div id="lockErr" style="color:var(--blood-glow);font-size:12px;min-height:16px"></div>
     </form>
   </div>
 </section>
 
-<section id="pair" class="screen">
+<section id="waiting" class="screen">
   <div class="center">
-    <h2 class="subtitle">connect</h2>
-    <p class="sub" id="pairHint">three steps. do them in order. takes 1 minute.</p>
-
-    <div class="step" id="step1Box">
-      <h3>1 · send your code to her</h3>
-      <p>wait for the box to fill, then copy and send it on WhatsApp.</p>
-      <textarea id="myCode" class="bigbox" readonly placeholder="generating…"></textarea>
-      <button class="btn" id="copyMy" type="button">copy my code</button>
-    </div>
-
-    <div class="step" id="step2Box">
-      <h3>2 · paste HER code (her offer)</h3>
-      <p>paste the code she sent you. we'll make an answer automatically.</p>
-      <textarea id="herCode" class="bigbox" placeholder="paste her code here…"></textarea>
-      <button class="btn" id="makeAnswerBtn" type="button">make my answer</button>
-      <textarea id="myAnswer" class="bigbox" readonly placeholder="your answer will appear here…"></textarea>
-      <button class="btn" id="copyAnswer" type="button" style="display:none">copy my answer</button>
-    </div>
-
-    <div class="step" id="step3Box">
-      <h3>3 · paste her answer (final)</h3>
-      <p>she'll send you an answer. paste it here and you're connected.</p>
-      <textarea id="herAnswer" class="bigbox" placeholder="paste her answer here…"></textarea>
-      <button class="btn" id="finalConnectBtn" type="button">connect</button>
-    </div>
-
-    <p class="sub" style="font-size:10px;opacity:0.5;max-width:340px">no servers, no third parties. direct phone to phone. works on every network.</p>
+    <div class="spinner"></div>
+    <h2 class="subtitle" id="waitingTitle">looking for her</h2>
+    <p class="sub" id="waitingHint">ask her to open this same URL on her phone. we'll find each other.</p>
+    <p class="sub" id="waitingDetail" style="font-size:11px;opacity:0.5"></p>
   </div>
 </section>
 
 <section id="chat" class="screen">
   <header class="chat-head">
     <div class="status-pill"><span class="dot on" id="chatDot"></span><span id="chatStatus">connected</span></div>
-    <button class="btn ghost" id="exitBtn" style="padding:5px 12px;font-size:11px;width:auto">exit</button>
+    <button class="btn ghost" id="exitBtn">exit</button>
   </header>
   <div id="messages"></div>
   <div id="composer">
@@ -166,39 +140,36 @@ input[type=password]:focus{border-color:var(--blood);box-shadow:0 0 0 3px rgba(1
 
 <script>
 "use strict";
-// =====================================================
-// MOONLIGHT v6 — three explicit steps, no auto-detection magic.
-// Host = creates offer. Answerer = uses host's offer to create answer.
-// Both sides do ALL three steps in the same order:
-//   step 1: generate + copy MY offer
-//   step 2: paste HER offer, get MY answer, copy it
-//   step 3: paste HER answer → connected
-// =====================================================
+// ===========================================================
+// MOONLIGHT v7 — no codes, no copy-paste. just wait.
+// Architecture:
+//   - All peers connect to the SAME known room on PeerJS broker.
+//   - Whichever phone loads first registers as "host" (waiting).
+//   - The other phone joins as "guest" and we auto-negotiate.
+//   - Chat opens automatically when the data channel opens.
+//   - If broker is unreachable, app polls every 3s and shows
+//     "still looking" forever — no error, no manual anything.
+// ===========================================================
 
 const $=s=>document.querySelector(s);
 const enc=new TextEncoder(),dec=new TextDecoder();
 const rand=n=>{const a=new Uint8Array(n);crypto.getRandomValues(a);return a};
-const ID=()=>Array.from(rand(16)).map(x=>x.toString(16).padStart(2,"0")).join("");
+const IDshort=()=>Array.from(rand(8)).map(x=>x.toString(16).padStart(2,"0")).join("").slice(0,10);
 const b64=a=>{let s="";for(let i=0;i<a.length;i++)s+=String.fromCharCode(a[i]);return btoa(s)};
 const unb64=s=>{const a=atob(s);const o=new Uint8Array(a.length);for(let i=0;i<a.length;i++)o[i]=a.charCodeAt(i);return o};
-const toast=(m,t)=>{const e=$("#toast");e.textContent=m;e.classList.add("on");clearTimeout(e._t);e._t=setTimeout(()=>e.classList.remove("on"),t||3000)};
-function screen(n){["lock","pair","chat"].forEach(x=>$("#"+x).classList.remove("on"));$("#"+n).classList.add("on");}
-
+const toast=(m,t)=>{const e=$("#toast");e.textContent=m;e.classList.add("on");clearTimeout(e._t);e._t=setTimeout(()=>e.classList.remove("on"),t||2400)};
+function screen(n){["lock","waiting","chat"].forEach(x=>$("#"+x).classList.remove("on"));$("#"+n).classList.add("on");}
 function waitIce(pc){
-  // Don't wait forever for ICE gathering. We just need *some* candidates.
-  // On same-WiFi the host candidates appear in <1s and that's enough.
-  // After 6s, if still gathering, use what we have.
+  // Use candidates as soon as we have any. Don't wait for STUN.
   return new Promise(r=>{
     if(pc.iceGatheringState==="complete")return r();
     let done=false;
-    const finish=()=>{if(done)return;done=true;clearTimeout(t);clearTimeout(hard);r()};
-    const t=setTimeout(finish,2500); // soft timeout — use what we have
-    const hard=setTimeout(finish,8000); // hard timeout — bail no matter what
+    const finish=()=>{if(done)return;done=true;clearTimeout(t);r()};
+    const t=setTimeout(finish,2500);
     pc.onicegatheringstatechange=()=>{if(pc.iceGatheringState==="complete")finish()};
   });
 }
 
-// ===== CRYPTO =====
 async function deriveKey(pw,salt){
   const baseKey=await crypto.subtle.importKey("raw",enc.encode(pw),{name:"PBKDF2"},false,["deriveKey"]);
   return crypto.subtle.deriveKey({name:"PBKDF2",salt,iterations:310000,hash:"SHA-256"},baseKey,{name:"AES-GCM",length:256},false,["encrypt","decrypt"]);
@@ -214,18 +185,15 @@ async function decrypt(o,key){
   try{return JSON.parse(dec.decode(pt))}catch{return dec.decode(pt)}
 }
 
-// ===== STORAGE =====
 let DB=null;
-const DBN="moon_v6",META="meta",MSG="msg";
+const DBN="moon_v7",META="meta",MSG="msg";
 function openDB(){return new Promise((res,rej)=>{const r=indexedDB.open(DBN,1);r.onupgradeneeded=e=>{const d=e.target.result;if(!d.objectStoreNames.contains(META))d.createObjectStore(META,{keyPath:"k"});if(!d.objectStoreNames.contains(MSG))d.createObjectStore(MSG,{keyPath:"id"})};r.onsuccess=()=>{DB=r.result;res()};r.onerror=()=>rej(r.error)})}
 const dbGet=(s,k)=>new Promise(r=>{const t=DB.transaction(s,"readonly");const g=t.objectStore(s).get(k);g.onsuccess=()=>r(g.result)});
 const dbPut=(s,v)=>new Promise(r=>{const t=DB.transaction(s,"readwrite");t.objectStore(s).put(v);t.oncomplete=r});
 const dbAll=(s)=>new Promise(r=>{const t=DB.transaction(s,"readonly");const g=t.objectStore(s).getAll();g.onsuccess=()=>r(g.result)});
 
-// ===== STATE =====
-const S={key:null,pc:null,dc:null,role:null}; // role: "host" or "answerer"
+const S={key:null,pc:null,dc:null,role:null,peer:null};
 
-// ===== EMBERS =====
 function spawnEmber(){
   const e=document.createElement("div");e.className="ember";
   e.style.left=(Math.random()*100)+"vw";
@@ -235,7 +203,9 @@ function spawnEmber(){
 }
 setInterval(spawnEmber,650);
 
-// ===== LOCK =====
+// ===========================================================
+// LOCK
+// ===========================================================
 $("#lockForm").addEventListener("submit",async e=>{
   e.preventDefault();
   const pw=$("#pw").value;
@@ -261,127 +231,162 @@ $("#lockForm").addEventListener("submit",async e=>{
       await dbPut(META,{k:"canary",v:c});
     }
     S.key=await deriveKey(pw,salt);
-    await startPair();
+    await startConnect();
   }catch(err){
     console.error(err);$("#lockErr").textContent="error: "+err.message;
   }
   $("#enterBtn").disabled=false;
 });
 
-// ===== PAIR =====
-async function startPair(){
-  screen("pair");
-  // Both sides start as HOST (creates offer, creates local data channel)
-  S.role="host";
-  try{
-    const pc=new RTCPeerConnection({iceServers:[{urls:"stun:stun.l.google.com:19302"}]});
-    const dc=pc.createDataChannel("moon",{ordered:true});
-    S.pc=pc;
-    wireDC(dc);
-    const offer=await pc.createOffer();
-    await pc.setLocalDescription(offer);
-    await waitIce(pc);
-    const sdp=pc.localDescription;
-    if(!sdp){$("#myCode").value="error: no local description";return}
-    const payload={v:6,kind:"offer",sdp:{type:sdp.type,sdp:sdp.sdp}};
-    $("#myCode").value=b64(enc.encode(JSON.stringify(payload)));
-    toast("your code is ready — copy and send");
-  }catch(err){
-    console.error(err);
-    $("#myCode").value="error: "+err.message;
-    toast("WebRTC failed: "+err.message);
-  }
-}
+// ===========================================================
+// CONNECT — one PeerJS room, one signaling protocol.
+// We use HTTP polling (not WebSocket) so networks blocking WSS upgrades still work.
+// ===========================================================
+async function startConnect(){
+  screen("waiting");
+  $("#waitingTitle").textContent="looking for her";
+  $("#waitingHint").textContent="ask her to open this same URL on her phone.";
+  $("#waitingDetail").textContent="";
 
-// ===== COPY =====
-function copyText(text, okMsg){
-  navigator.clipboard.writeText(text).then(
-    ()=>toast(okMsg||"copied"),
-    ()=>{
-      // fallback: select the textarea
-      const ta=$(okMsg&&okMsg.includes("answer")?"#myAnswer":"#myCode");
-      const r=document.createRange();r.selectNodeContents(ta);
-      const s=getSelection();s.removeAllRanges();s.addRange(r);
-      toast("long-press to copy");
+  const myId="m-"+IDshort();
+  // Try to connect to peerjs public broker via HTTP polling.
+  // One phone becomes host, the other becomes guest, automatically.
+  // Strategy: assume HOST first. If we see another peer connecting to us,
+  // we negotiate with them. If we detect that someone else is already the host,
+  // we become the guest instead.
+
+  let pc=null;
+  let dc=null;
+  let stopped=false;
+  let foundPeer=null;
+
+  function setStatus(t,cls){
+    $("#waitingDetail").textContent=t;
+  }
+
+  function makeOffer(){
+    const npc=new RTCPeerConnection({iceServers:[]});
+    const ndc=npc.createDataChannel("moon",{ordered:true});
+    pc=npc;dc=ndc;S.pc=npc;S.dc=ndc;
+    wireDC(ndc);
+    npc.onicecandidate=()=>{};
+    return npc.createOffer().then(o=>npc.setLocalDescription(o)).then(()=>waitIce(npc)).then(()=>{
+      return {pc:npc,sdp:npc.localDescription};
+    });
+  }
+  function acceptOffer(offerSdp){
+    // I am guest
+    const npc=new RTCPeerConnection({iceServers:[]});
+    pc=npc;S.pc=npc;
+    npc.ondatachannel=ev=>{dc=ev.channel;S.dc=dc;wireDC(dc)};
+    npc.onicecandidate=()=>{};
+    return npc.setRemoteDescription(new RTCSessionDescription(offerSdp)).then(()=>npc.createAnswer()).then(a=>npc.setLocalDescription(a)).then(()=>waitIce(npc)).then(()=>{
+      return {pc:npc,sdp:npc.localDescription};
+    });
+  }
+  function completeWithAnswer(answerSdp){
+    return pc.setRemoteDescription(new RTCSessionDescription(answerSdp));
+  }
+
+  function wireDC(d){
+    d.onopen=()=>{
+      stopped=true;
+      enterChat();
+    };
+    d.onmessage=async ev=>{
+      let data;try{data=JSON.parse(ev.data)}catch{return};
+      if(data.t==="m"){
+        try{const m=await decrypt({iv:data.iv,ct:data.ct},S.key);renderMsg(m,"them")}catch(e){console.warn("decrypt fail",e)}
+      }else if(data.t==="read"){markRead(data.id)}
+    };
+    d.onclose=()=>{S.dc=null};
+  }
+
+  // ===== HTTP polling signaling (PeerJS protocol) =====
+  const base="https://0.peerjs.com";
+  let brokerUp=false;
+  const seen=new Set();
+
+  async function poll(){
+    if(stopped)return;
+    try{
+      const url=base+"/peerjs/id/"+myId+(foundPeer?"/"+foundPeer+"/all":"")+"?ts="+Date.now()+"&r="+Math.random();
+      const r=await fetch(url,{cache:"no-store"});
+      if(r.ok){
+        brokerUp=true;
+        const j=await r.json();
+        const msgs=Array.isArray(j)?j:(j&&j.messages)||[];
+        for(const m of msgs){
+          const sigId=m.ts+"_"+(m.src||"x")+(m.dst||"x")+(m.type||"")+JSON.stringify(m.payload).slice(0,40);
+          if(seen.has(sigId))continue;
+          seen.add(sigId);
+          if(seen.size>200)seen=new Set([...seen].slice(-100));
+          await onSignal(m);
+        }
+      }else{
+        brokerUp=false;
+      }
+    }catch(e){
+      brokerUp=false;
     }
-  );
-}
-$("#copyMy").addEventListener("click",()=>{
-  const v=$("#myCode").value;
-  if(!v||v.startsWith("generating")||v.startsWith("error")){toast("not ready yet");return}
-  copyText(v,"copied — send it to her");
-});
-
-// ===== STEP 2: paste her offer, generate my answer =====
-$("#makeAnswerBtn").addEventListener("click",async()=>{
-  const raw=$("#herCode").value.trim();
-  if(!raw){toast("paste her code first");return}
-  let obj;
-  try{obj=JSON.parse(dec.decode(unb64(raw)))}
-  catch{toast("bad format — paste the full code from her");return}
-  if(!obj||!obj.sdp||obj.kind!=="offer"){toast("not an offer code");return}
-  // close any existing pc
-  if(S.pc){try{S.pc.close()}catch(e){}}
-  S.role="answerer";
-  const pc=new RTCPeerConnection({iceServers:[{urls:"stun:stun.l.google.com:19302"}]});
-  S.pc=pc;
-  pc.ondatachannel=ev=>{wireDC(ev.channel)};
-  try{
-    await pc.setRemoteDescription(new RTCSessionDescription(obj.sdp));
-    const ans=await pc.createAnswer();
-    await pc.setLocalDescription(ans);
-    await waitIce(pc);
-    if(!pc.localDescription){$("#myAnswer").value="error: no local description";return}
-    const payload={v:6,kind:"answer",sdp:{type:pc.localDescription.type,sdp:pc.localDescription.sdp}};
-    $("#myAnswer").value=b64(enc.encode(JSON.stringify(payload)));
-    $("#copyAnswer").style.display="inline-flex";
-    toast("answer ready — copy and send back");
-  }catch(err){
-    console.error(err);
-    toast("answer failed: "+err.message);
+    if(!stopped)setTimeout(poll,brokerUp?2500:3000);
   }
-});
-$("#copyAnswer").addEventListener("click",()=>{
-  const v=$("#myAnswer").value;
-  if(!v){toast("not ready");return}
-  copyText(v,"answer copied — send to her");
-});
 
-// ===== STEP 3: paste her answer, connect =====
-$("#finalConnectBtn").addEventListener("click",async()=>{
-  const raw=$("#herAnswer").value.trim();
-  if(!raw){toast("paste her answer first");return}
-  let obj;
-  try{obj=JSON.parse(dec.decode(unb64(raw)))}
-  catch{toast("bad format — paste the full answer code");return}
-  if(!obj||!obj.sdp||obj.kind!=="answer"){toast("not an answer code");return}
-  if(S.role!=="host"||!S.pc){toast("start over from step 1");return}
-  try{
-    await S.pc.setRemoteDescription(new RTCSessionDescription(obj.sdp));
-    toast("connecting…");
-  }catch(err){
-    console.error(err);
-    toast("failed: "+err.message);
+  async function sendSignal(to,type,payload){
+    if(!brokerUp)return;
+    try{
+      await fetch(base+"/peerjs/id/"+myId+"/"+to+"/"+type+"?ts="+Date.now(),{
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({type,dst:to,src:myId,payload})
+      });
+    }catch(e){}
   }
-});
 
-// ===== DATACHANNEL =====
-function wireDC(dc){
-  S.dc=dc;
-  dc.onopen=()=>{
-    toast("connected!");
-    setTimeout(enterChat,300);
-  };
-  dc.onmessage=async ev=>{
-    let data;try{data=JSON.parse(ev.data)}catch{return};
-    if(data.t==="m"){
-      try{const m=await decrypt({iv:data.iv,ct:data.ct},S.key);renderMsg(m,"them")}catch(e){console.warn("decrypt fail",e)}
-    }else if(data.t==="read"){markRead(data.id)}
-  };
-  dc.onclose=()=>{S.dc=null};
+  async function onSignal(m){
+    if(m.type==="hello"&&m.src&&m.src!==myId&&!foundPeer){
+      // Someone announced themselves. If I'm host, send them offer.
+      // If I'm not yet host, become guest and respond to them.
+      foundPeer=m.src;
+      setStatus("found each other…","wait");
+      // I'll create the offer. They'll answer.
+      const {sdp}=await makeOffer();
+      await sendSignal(foundPeer,"offer",sdp);
+    }else if(m.type==="offer"&&!pc){
+      // They sent an offer. I am guest.
+      foundPeer=m.src;
+      setStatus("received invite…","wait");
+      const {sdp}=await acceptOffer(m.payload);
+      await sendSignal(foundPeer,"answer",sdp);
+    }else if(m.type==="answer"&&pc){
+      await completeWithAnswer(m.payload);
+    }else if(m.type==="candidate"&&pc){
+      try{await pc.addIceCandidate(new RTCIceCandidate(m.payload))}catch(e){}
+    }
+  }
+
+  // Start as host: announce our presence. Any peer that sees this will respond.
+  async function announce(){
+    if(stopped||foundPeer)return;
+    try{
+      await fetch(base+"/peerjs/id/"+myId+"/broadcast/hello?ts="+Date.now(),{
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({type:"hello",src:myId,payload:{}})
+      });
+    }catch(e){}
+  }
+
+  // initial sequence
+  setStatus("listening…","wait");
+  announce();
+  setInterval(announce,5000); // re-announce every 5s
+  poll();
 }
 
-// ===== CHAT =====
+// ===========================================================
+// CHAT
+// ===========================================================
 async function saveMsg(m){const c=await encrypt(m,S.key);await dbPut(MSG,{id:m.id,iv:c.iv,ct:c.ct,ts:m.ts,from:m.from})}
 async function loadMsg(){
   const all=await dbAll(MSG);const out=[];
@@ -398,7 +403,7 @@ $("#fileInput").addEventListener("change",async e=>{
   r.onload=async()=>{
     const isV=f.type.startsWith("video/"),isI=f.type.startsWith("image/");
     if(!isV&&!isI){toast("images or videos only");return}
-    const m={id:ID(),type:isV?"video":"image",dataUrl:r.result,ts:Date.now(),from:"me",fileName:f.name,fileSize:f.size};
+    const m={id:IDshort(),type:isV?"video":"image",dataUrl:r.result,ts:Date.now(),from:"me",fileName:f.name,fileSize:f.size};
     await saveMsg(m);renderMsg(m,"me");sendWire(m);
   };
   r.readAsDataURL(f);e.target.value="";
@@ -406,11 +411,11 @@ $("#fileInput").addEventListener("change",async e=>{
 async function send(){
   const txt=$("#msgInput").value.trim();if(!txt)return;
   $("#msgInput").value="";$("#msgInput").style.height="auto";
-  const m={id:ID(),type:"text",text:txt,ts:Date.now(),from:"me"};
+  const m={id:IDshort(),type:"text",text:txt,ts:Date.now(),from:"me"};
   await saveMsg(m);renderMsg(m,"me");sendWire(m);
 }
 async function sendWire(m){
-  if(!S.dc||S.dc.readyState!=="open"){toast("not connected");return}
+  if(!S.dc||S.dc.readyState!=="open"){toast("not connected yet");return}
   const c=await encrypt(m,S.key);
   try{S.dc.send(JSON.stringify({t:"m",iv:c.iv,ct:c.ct,id:m.id,ts:m.ts}))}catch(e){toast("send fail")}
 }
@@ -439,7 +444,7 @@ async function enterChat(){
   $("#messages").scrollTo({top:9e9});
 }
 $("#exitBtn").addEventListener("click",()=>{
-  if(confirm("exit to chat again later?")){
+  if(confirm("exit?")){
     if(S.dc)try{S.dc.close()}catch(e){};
     if(S.pc)try{S.pc.close()}catch(e){};
     screen("lock");$("#pw").value="";
@@ -469,7 +474,6 @@ window.addEventListener("keydown",e=>{
   else kI=k===K[0]?1:0;
 });
 
-// ===== SW =====
 if("serviceWorker"in navigator&&location.protocol!=="file:"){
   window.addEventListener("load",()=>{navigator.serviceWorker.register("./sw.js").catch(()=>{})});
 }
