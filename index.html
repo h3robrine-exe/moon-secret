@@ -6,7 +6,7 @@
 <meta name="theme-color" content="#0a0005" />
 <meta name="color-scheme" content="dark" />
 <meta name="referrer" content="no-referrer" />
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' blob: wss://0.peerjs.com:443 https://0.peerjs.com; font-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' blob: wss://0.peerjs.com:443 https://0.peerjs.com wss://*.skyway.io https://*.skyway.io wss://echo.websocket.events https://echo.websocket.events; font-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'" />
 <meta name="robots" content="noindex,nofollow,noarchive,nosnippet" />
 <title>Moonlight</title>
 <link rel="manifest" href="manifest.webmanifest" />
@@ -500,7 +500,45 @@ function showScreen(name){
   $("#"+name).classList.add("on");
 }
 
+async function getOrMakeDeviceId(){
+  const r=await dbGet(STORE_CFG,"device");
+  if(r&&r.v&&r.v.id)return r.v.id;
+  const id=PEER_ID_PREFIX+randId(20);
+  await dbPut(STORE_CFG,{k:"device",v:{id}});
+  return id;
+}
+async function savePeerId(role,code,peerId){
+  const r=await dbGet(STORE_CFG,"pair")||{k:"pair",v:{}};
+  r.v[role]={code,peerId,ts:Date.now()};
+  await dbPut(STORE_CFG,r);
+}
+async function loadPair(){
+  const r=await dbGet(STORE_CFG,"pair");
+  return r&&r.v?r.v:{};
+}
+
 /* ====== LOBBY ====== */
+async function startAutoReconnect(){
+  // try cached peer ID; if found, connect silently without user action
+  const myId=await getOrMakeDeviceId();
+  const pair=await loadPair();
+  if(!pair.host&&!pair.guest)return false;
+  const p=pair.host||pair.guest;
+  // try connecting via any broker to the cached peer ID
+  peerSelf=new Peer({id:myId});
+  peerSelf.onopen=()=>{
+    setStatus("reconnecting…","wait");
+    peerSelf.connect(p.peerId,true).then(()=>{
+      // connection will trigger attachConn + enterChat via onconnection
+    }).catch(e=>{
+      setStatus("couldn't auto-reconnect","");
+      toast("rescan peer to reconnect");
+    });
+  };
+  peerSelf.onerror=()=>{};
+  peerSelf.onconnection=conn=>{if(activeConn)try{activeConn.close()}catch(e){}activeConn=conn;attachConn(conn);setStatus("connected","on")};
+  return true;
+}
 ["tabCreate","tabJoin","tabManual"].forEach((id,i)=>{
   $("#"+id).addEventListener("click",()=>{
     ["tabCreate","tabJoin","tabManual"].forEach(x=>$("#"+x).classList.remove("on"));
@@ -545,24 +583,26 @@ const QR={
   }
 };
 
-/* ====== PEER (WebRTC P2P with PeerJS public broker) ======
- * PeerJS CDN is REQUIRED for signaling. To stay zero-CDN,
- * we bundle the peerjs client inline. See end of file for the
- * 12KB tiny-signaling-client we ship.
-*
- * If broker is unreachable we fall back to manual offer/answer
- * over any out-of-band channel (WhatsApp, email, signal, paper).
+/* ====== PEER (WebRTC P2P with multi-broker fallback) ======
+ * Multi-broker fallback list — first to connect wins.
+ * Peer IDs persist in IndexedDB so reconnects are automatic.
+ * One-time initial pair (QR/code) → reconnect uses cached IDs forever.
+ *
+ * Brokers (tried in order, first OK wins):
+ *   1. 0.peerjs.com           — PeerJS public broker (default, free)
+ *   2. wss://*.skyway.io      — NTT SkyWay free broker
+ *   3. wss://echo.websocket.events — public echo server (last resort)
 */
 const PEER_ID_PREFIX="moonlight-";
-let peerLib=null;
+const BROKERS=[
+  {host:"0.peerjs.com",port:443,secure:true},
+  {host:"skyway.io",port:443,secure:true,path:"/peerjs"},
+  {host:"echo.websocket.events",port:443,secure:true,path:"/"}
+];
 
-/* ====== PeerJS bundled inline (minimal client) ======
- * Implements ONLY the signaling protocol needed to talk to
- * 0.peerjs.com public broker + minimal API surface.
- * wss://0.peerjs.com:443/peerjs/id
- * Messages: {src,dst,type:'offer'|'answer'|'candidate',payload}
- * Internally uses RTCPeerConnection + DataChannel.
- * ~10kb.
+/* ====== PeerJS bundled inline (multi-broker fallback) ======
+ * Tries brokers in order; first to register wins.
+ * Persistent peer IDs stored in IndexedDB for auto-reconnect.
 */
 (function(){
   const Peer=function(opts){
@@ -570,13 +610,20 @@ let peerLib=null;
     this.opts=opts||{};
     this.conns={};
     this.ws=null;
+    this.brokerIdx=opts.brokerIdx||0;
     this.ready=false;
     this.open=false;
     this.onopen=null;
     this.onconnection=null;
     this.onclose=null;
     this.onerror=null;
-    connect(this,opts);
+    this._tryNext=()=>{
+      const b=BROKERS[this.brokerIdx];
+      if(!b){if(this.onerror)this.onerror(new Error("all brokers failed"));return false}
+      connect(this,b);
+      return true
+    };
+    this._tryNext();
   };
   Peer.prototype.connect=function(remoteId,initiator){
     const pc=new RTCPeerConnection({iceServers:[{urls:"stun:stun.l.google.com:19302"}]});
@@ -598,6 +645,11 @@ let peerLib=null;
       meta._resolve=res;meta._reject=rej;
     });
   };
+  Peer.prototype.fallback=function(){
+    this.brokerIdx++;
+    if(this._tryNext())return true;
+    return false
+  };
   function setupConn(self,meta){
     const{pc,dc,initiator}=meta;
     if(initiator){
@@ -609,27 +661,27 @@ let peerLib=null;
   function openConn(self,meta){meta.open=true;if(self.onconnection)self.onconnection({id:meta.id,dc:meta.dc,send:data=>meta.dc.send(data),close:()=>{meta.dc.close();meta.pc.close()}});if(meta._resolve)meta._resolve({id:meta.id,dc:meta.dc,send:data=>meta.dc.send(data)})}
   function onMsg(self,id,raw){if(self.onconnection)self.onconnection({id,dc:null,raw:raw,send:null,isSignal:true})}
   Peer.prototype.send=function(id,data){const m=this.conns[id];if(m&&m.dc&&m.dc.readyState==="open")m.dc.send(data)};
-  Peer.prototype.destroy=function(){if(this.ws)try{this.ws.close()}catch(e){};Object.values(this.conns).forEach(c=>{try{c.pc.close()}catch(e){}});if(this.onclose)this.onclose()};
-  function sendSignal(self,msg){if(self.ws&&self.ws.readyState===1)self.ws.send(JSON.stringify(msg));else if(self.onSignalQueue)self.onSignalQueue(msg)}
-  function connect(self,opts){
-    const host=(opts&&opts.host)||"0.peerjs.com";const port=(opts&&opts.port)||443;const secure=(opts&&opts.secure)!==false;
-    const url=(secure?"wss://":"ws://")+host+((port===80||port===443)?"":(":"+port))+"/peerjs/"+self.id+"?key=peerjs&ts="+Date.now()+"&token="+b64e(rand(8).slice().buffer).replace(/[^A-Za-z0-9]/g,"");
+  Peer.prototype.destroy=function(){this._killed=true;if(this.ws)try{this.ws.close()}catch(e){};Object.values(this.conns).forEach(c=>{try{c.pc.close()}catch(e){}});if(this.onclose)this.onclose()};
+  function sendSignal(self,msg){if(self.ws&&self.ws.readyState===1){try{self.ws.send(JSON.stringify(msg))}catch(e){}}else if(self.onSignalQueue)self.onSignalQueue(msg)}
+  function connect(self,b){
+    const path=b.path||"/peerjs";
+    const url=(b.secure?"wss://":"ws://")+b.host+((b.port===80||b.port===443)?"":(":"+b.port))+path+"/"+self.id+"?ts="+Date.now()+"&token="+b64e(rand(8)).replace(/[^A-Za-z0-9]/g,"");
     let ws;
-    try{ws=new WebSocket(url)}catch(e){setTimeout(()=>{if(self.onerror)self.onerror(e);connectRetry(self,opts)},3000);return}
+    try{ws=new WebSocket(url)}catch(e){self.brokerIdx++;self._tryNext();return}
     self.ws=ws;
+    const failed=()=>{if(self._killed)return;self.open=false;if(self.onclose)self.onclose();self.brokerIdx++;self._tryNext()};
     ws.onopen=()=>{self.ready=true;self.open=true;if(self.onopen)self.onopen()};
-    ws.onmessage=e=>{let m;try{m=JSON.parse(e.data)}catch{return}
-      if(m.type==="offer"||m.type==="answer"||m.type==="candidate"){
-        handleSignal(self,m);
-      }
+    ws.onmessage=e=>{
+      const txt=(e.data&&typeof e.data==="string")?e.data:"";
+      let m;try{m=JSON.parse(txt)}catch{return}
+      if(m.type==="offer"||m.type==="answer"||m.type==="candidate")handleSignal(self,m);
     };
-    ws.onerror=e=>{if(self.onerror)self.onerror(e)};
-    ws.onclose=()=>{self.open=false;if(self.onclose)self.onclose();connectRetry(self,opts)};
+    ws.onerror=()=>{failed()};
+    ws.onclose=()=>{failed()};
   }
-  let retryT=0;
-  function connectRetry(self,opts){if(self._killed)return;if(retryT++>3)return;setTimeout(()=>connect(self,opts),Math.min(8000,1500*retryT))}
   function handleSignal(self,m){
     const id=m.src;
+    if(!id)return;
     let meta=self.conns[id];
     if(!meta){meta={pc:new RTCPeerConnection({iceServers:[{urls:"stun:stun.l.google.com:19302"}]}),dc:null,initiator:false,id};meta.pc.ondatachannel=e=>{meta.dc=e.channel;setupConn(self,meta)};self.conns[id]=meta}
     const{pc}=meta;
@@ -661,9 +713,9 @@ async function setupPeer(id){
   return new Promise((resolve,reject)=>{
     let resolved=false;
     peerSelf=new Peer({id});
-    const t=setTimeout(()=>{if(!resolved){resolved=true;reject(new Error("timeout"))}},8000);
+    const t=setTimeout(()=>{if(!resolved&&!peerSelf.open){try{peerSelf.destroy()}catch(e){};if(!resolved){resolved=true;reject(new Error("all brokers failed"))}}},15000);
     peerSelf.onopen=()=>{if(resolved)return;resolved=true;clearTimeout(t);resolve(peerSelf)};
-    peerSelf.onerror=e=>{if(resolved)return;resolved=true;clearTimeout(t);reject(e)};
+    peerSelf.onerror=e=>{if(resolved||peerSelf.open)return;};
     peerSelf.onconnection=conn=>{
       if(activeConn){try{activeConn.close()}catch(e){}}
       activeConn=conn;attachConn(conn);
@@ -677,19 +729,21 @@ $("#btnCreate").addEventListener("click",async()=>{
   if(!S.key){toast("unlock first");return}
   const code=genRoomCode();
   S.room=code;S.role="host";
-  const myId=PEER_ID_PREFIX+code+"-A";
+  const myId=await getOrMakeDeviceId();
+  const hostId=PEER_ID_PREFIX+code+"-A";
   $("#createCode").style.display="flex";$("#createCode").textContent=code;
   const qr=QR.makeQR("ml://"+code);
   const canvas=createCanvas();
   QR.toCanvas(qr,4,canvas);
   $("#createQR").style.display="flex";
   $("#btnOpenChat").style.display="inline-flex";
-  await dbPut(STORE_CFG,{k:"room",v:{code,role:"host",id:myId}});
+  await savePeerId("host",code,hostId);
+  await dbPut(STORE_CFG,{k:"room",v:{code,role:"host",id:hostId}});
   setStatus("waiting…","wait");
   try{
-    await setupPeer(myId);
+    await setupPeer(hostId);
     setStatus("waiting for her…","wait");
-  }catch(e){setStatus("offline — try manual","");toast("broker unreachable — use manual")}
+  }catch(e){setStatus("offline — try manual","");toast("all brokers unreachable — use manual")}
 });
 
 $("#btnOpenChat").addEventListener("click",()=>{
@@ -703,15 +757,15 @@ $("#btnJoin").addEventListener("click",async()=>{
   const code=$("#joinCode").value.trim().toUpperCase();
   if(code.length<4){toast("enter the code");return}
   S.room=code;S.role="guest";
-  const myId=PEER_ID_PREFIX+code+"-B";
+  const myId=await getOrMakeDeviceId();
   const hostId=PEER_ID_PREFIX+code+"-A";
+  await savePeerId("guest",code,hostId);
   await dbPut(STORE_CFG,{k:"room",v:{code,role:"guest",id:myId}});
   setStatus("calling…","wait");
   try{
     const p=await setupPeer(myId);
-    // guest initiates: connect to host
     p.connect(hostId,true).catch(e=>{console.warn("connect fail",e);setStatus("host offline","");toast("can't reach host — try manual")});
-  }catch(e){setStatus("offline — try manual","");toast("broker unreachable")}
+  }catch(e){setStatus("offline — try manual","");toast("all brokers unreachable")}
 });
 function createCanvas(){
   const c=document.createElement("canvas");$("#createQR").innerHTML="";$("#createQR").appendChild(c);return c;
@@ -983,6 +1037,10 @@ $("#mediaClose").addEventListener("click",()=>{$("#mediaModal").classList.remove
 
 /* ====== AUTO ENTER ====== */
 async function maybeAutoEnter(){
+  // 1) check if user has ever paired. If yes, attempt silent reconnect.
+  const reconnected=await startAutoReconnect();
+  if(reconnected)return;
+  // 2) no prior pair. Show last room code only for user reference.
   const r=await dbGet(STORE_CFG,"room");
   if(r&&r.v&&r.v.code){
     S.room=r.v.code;S.role=r.v.role||"host";
