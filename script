@@ -1,0 +1,429 @@
+
+"use strict";
+// =====================================================
+// MOONLIGHT v4 — multi-broker + QR scan + manual handshake
+// - auto: HTTP polling on /peerjs REST (works on networks that block WSS)
+// - manual: QR scan + offer/answer copy-paste (works EVERYWHERE)
+// =====================================================
+
+// ===== PARTICLES =====
+function spawnEmber(){
+  const e=document.createElement("div");e.className="ember";
+  e.style.left=(Math.random()*100)+"vw";
+  const dur=8+Math.random()*10;const drift=(Math.random()-0.5)*60;
+  e.animate([{transform:"translateY(110vh) translateX(0)",opacity:0},{transform:`translateY(-10vh) translateX(${drift}px) scale(1)`,opacity:1,offset:.1},{transform:`translateY(-30vh) translateX(${drift*1.4}px) scale(0.3)`,opacity:0}],{duration:dur*1000,easing:"linear"}).onfinish=()=>e.remove();
+  $("#embers").appendChild(e);
+}
+setInterval(spawnEmber,650);
+
+// ===== UTILS =====
+const $=s=>document.querySelector(s);
+const enc=new TextEncoder(),dec=new TextDecoder();
+const rand=n=>{const a=new Uint8Array(n);crypto.getRandomValues(a);return a};
+const toast=(m,t)=>{const e=$("#toast");e.textContent=m;e.classList.add("on");clearTimeout(e._t);e._t=setTimeout(()=>e.classList.remove("on"),t||2400)};
+function screen(n){["lock","ready","chat"].forEach(x=>$("#"+x).classList.remove("on"));$("#"+n).classList.add("on");}
+function setStatus(t,c){
+  $("#statusBox").style.display="flex";
+  $("#statusText").textContent=t;
+  $("#statusDot").className="dot "+(c||"");
+}
+const ID=()=>"ml-"+Array.from(rand(16)).map(x=>x.toString(16).padStart(2,"0")).join("");
+
+// ===== CRYPTO =====
+async function deriveKey(pw,salt){
+  const baseKey=await crypto.subtle.importKey("raw",enc.encode(pw),{name:"PBKDF2"},false,["deriveKey"]);
+  return crypto.subtle.deriveKey({name:"PBKDF2",salt,iterations:310000,hash:"SHA-256"},baseKey,{name:"AES-GCM",length:256},false,["encrypt","decrypt"]);
+}
+async function encrypt(obj,key){
+  const iv=rand(12);
+  const data=enc.encode(typeof obj==="string"?obj:JSON.stringify(obj));
+  const ct=await crypto.subtle.encrypt({name:"AES-GCM",iv},key,data);
+  return {iv:b64(new Uint8Array(iv)),ct:b64(new Uint8Array(ct))};
+}
+async function decrypt(o,key){
+  const pt=await crypto.subtle.decrypt({name:"AES-GCM",iv:unb64(o.iv)},key,unb64(o.ct));
+  try{return JSON.parse(dec.decode(pt))}catch{return dec.decode(pt)}
+}
+function b64(a){let s="";for(let i=0;i<a.length;i++)s+=String.fromCharCode(a[i]);return btoa(s)}
+function unb64(s){const a=atob(s);const o=new Uint8Array(a.length);for(let i=0;i<a.length;i++)o[i]=a.charCodeAt(i);return o}
+
+// ===== STORAGE =====
+let DB=null;
+const DBN="moon",META="meta",MSG="msg",CFG="cfg";
+function openDB(){return new Promise((res,rej)=>{const r=indexedDB.open(DBN,1);r.onupgradeneeded=e=>{const d=e.target.result;if(!d.objectStoreNames.contains(META))d.createObjectStore(META,{keyPath:"k"});if(!d.objectStoreNames.contains(MSG))d.createObjectStore(MSG,{keyPath:"id"});if(!d.objectStoreNames.contains(CFG))d.createObjectStore(CFG,{keyPath:"k"})};r.onsuccess=()=>{DB=r.result;res()};r.onerror=()=>rej(r.error)})}
+const dbGet=(s,k)=>new Promise(r=>{const t=DB.transaction(s,"readonly");const g=t.objectStore(s).get(k);g.onsuccess=()=>r(g.result)});
+const dbPut=(s,v)=>new Promise(r=>{const t=DB.transaction(s,"readwrite");t.objectStore(s).put(v);t.oncomplete=r});
+const dbAll=(s)=>new Promise(r=>{const t=DB.transaction(s,"readonly");const g=t.objectStore(s).getAll();g.onsuccess=()=>r(g.result)});
+
+// ===== STATE =====
+const S={key:null,role:null,peer:null,pc:null,dc:null,pollTimer:null,pollSeen:new Set()};
+
+// ===== LOCK =====
+$("#lockForm").addEventListener("submit",async e=>{
+  e.preventDefault();
+  const pw=$("#pw").value;
+  if(!pw||pw.length<3){$("#lockErr").textContent="password required";return}
+  $("#enterBtn").disabled=true;$("#lockErr").textContent="";
+  try{
+    await openDB();
+    let saltMeta=await dbGet(META,"salt");
+    let salt;
+    if(saltMeta&&saltMeta.v){
+      salt=new Uint8Array(saltMeta.v);
+      S.key=await deriveKey(pw,salt);
+      const canary=await dbGet(META,"canary");
+      if(canary){
+        try{const ok=await decrypt({iv:canary.v.iv,ct:canary.v.ct},S.key);if(ok!=="ok")throw 0}
+        catch{$("#lockErr").textContent="wrong password";$("#enterBtn").disabled=false;S.key=null;return}
+      }
+    }else{
+      salt=rand(16);
+      S.key=await deriveKey(pw,salt);
+      const c=await encrypt("ok",S.key);
+      await dbPut(META,{k:"salt",v:Array.from(salt)});
+      await dbPut(META,{k:"canary",v:c});
+    }
+    S.key=await deriveKey(pw,salt);
+    const pair=await dbGet(CFG,"pair");
+    // CHECK URL HASH FOR INVITE
+    const hash=location.hash.replace(/^#/,"");
+    if(hash.startsWith("invite=")){
+      try{
+        const inviteRaw=decodeURIComponent(hash.slice(7));
+        const invite=JSON.parse(dec.decode(unb64(inviteRaw)));
+        if(invite&&invite.hostId&&invite.ts>Date.now()-1000*60*60*24*7){
+          await guestFlow(invite);
+          $("#enterBtn").disabled=false;
+          return;
+        }
+      }catch(err){console.warn("bad invite",err)}
+    }
+    if(pair&&pair.v&&pair.v.peerId&&pair.v.myId){
+      await reconnectFlow(pair.v);
+    }else{
+      await hostFlow();
+    }
+  }catch(err){
+    console.error(err);$("#lockErr").textContent="error: "+err.message;
+  }
+  $("#enterBtn").disabled=false;
+});
+
+// ===== HOST FLOW =====
+async function hostFlow(){
+  const myId=ID();
+  // get or make sure we have a saved pair
+  const existing=await dbGet(CFG,"pair");
+  const v=existing&&existing.v?existing.v:{};
+  v.myId=myId;
+  v.peerId=null;
+  v.role="host";
+  v.createdAt=Date.now();
+  await dbPut(CFG,{k:"pair",v});
+  // build invite link
+  const invitePayload={hostId:myId,pairCode:btoa(String.fromCharCode(...rand(8))).replace(/[^A-Z0-9]/gi,"").slice(0,8).toUpperCase(),ts:Date.now()};
+  const inviteB64=b64(enc.encode(JSON.stringify(invitePayload)));
+  const inviteURL=location.origin+location.pathname+"#invite="+encodeURIComponent(inviteB64);
+  screen("ready");
+  $("#readyText").textContent="send this link to her. one time only.";
+  $("#shareLinkBox").style.display="block";$("#shareLinkBox").textContent=inviteURL;
+  $("#shareLinkBtn").style.display="block";
+  $("#qrBox").style.display="flex";renderQR($("#qrBox"),inviteURL);
+  $("#shareInfo").style.display="block";
+  $("#scanBtn").style.display="none"; // scan is for guest
+  $("#manualBtn").style.display="block";
+  $("#shareLinkBtn").onclick=async()=>{
+    try{await navigator.clipboard.writeText(inviteURL);toast("copied!")}
+    catch{const r=document.createRange();r.selectNodeContents($("#shareLinkBox"));const s=getSelection();s.removeAllRanges();s.addRange(r);toast("long-press to copy")}
+  };
+  // try broker with HTTP polling (works on networks that block WSS)
+  await tryBrokerHttp(myId,null,"host");
+}
+
+// ===== GUEST FLOW =====
+async function guestFlow(invite){
+  const myId=ID();
+  await dbPut(CFG,{k:"pair",v:{myId,peerId:invite.hostId,role:"guest",invite}});
+  screen("ready");
+  $("#readyText").textContent="connecting you two…";
+  $("#shareLinkBox").style.display="none";$("#shareLinkBtn").style.display="none";$("#qrBox").style.display="none";$("#shareInfo").style.display="none";
+  $("#scanBtn").style.display="none";$("#manualBtn").style.display="block";
+  await tryBrokerHttp(myId,invite.hostId,"guest");
+}
+
+// ===== RECONNECT FLOW =====
+async function reconnectFlow(v){
+  screen("ready");
+  $("#readyText").textContent="reconnecting…";
+  $("#shareLinkBox").style.display="none";$("#shareLinkBtn").style.display="none";$("#qrBox").style.display="none";$("#shareInfo").style.display="none";
+  $("#scanBtn").style.display="none";$("#manualBtn").style.display="block";
+  await tryBrokerHttp(v.myId,v.peerId,v.role||"host");
+}
+
+// ===== BROKER VIA HTTP POLLING (PeerJS REST API) =====
+// RESTful signaling via 0.peerjs.com's HTTP endpoints. Works even when WSS upgrade fails.
+async function tryBrokerHttp(myId,peerId,role){
+  setStatus("finding a path…","wait");
+  const base="https://0.peerjs.com";
+  // register my ID via GET
+  try{
+    const reg=await fetch(base+"/peerjs/id/"+myId+"?ts="+Date.now()+"&token="+Math.random().toString(36).slice(2),{cache:"no-store"});
+    if(!reg.ok)throw new Error("register failed "+reg.status);
+  }catch(e){
+    console.warn("broker register failed",e);
+    // fall through to manual only
+  }
+  // if guest, send "open" to host so host knows to send offer
+  if(role==="guest"&&peerId){
+    try{
+      await fetch(base+"/peerjs/id/"+myId+"/"+peerId+"/offer?ts="+Date.now(),{
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({type:"open",src:myId})
+      });
+    }catch(e){console.warn("guest open failed",e)}
+  }
+  // poll for incoming offers/answers/candidates
+  let stopped=false;
+  const stop=()=>{stopped=true};
+  S.pollTimer=stop;
+  const target=role==="guest"?peerId:null;  // host waits for first incoming "open"
+  let firstSeen=false;
+  while(!stopped){
+    try{
+      const url=base+"/peerjs/id/"+myId+(target?"/"+target+"/all":"")+"?ts="+Date.now()+"&rand="+Math.random();
+      const r=await fetch(url,{cache:"no-store"});
+      if(r.ok){
+        const j=await r.json();
+        const msgs=Array.isArray(j)?j:(j&&j.messages)||[];
+        if(msgs.length&&!firstSeen){firstSeen=true;setStatus("almost there…","wait")}
+        for(const m of msgs){
+          const sigId=m.ts+"_"+(m.src||"x")+(m.dst||"x")+(m.type||m.payload?.type||"");
+          if(S.pollSeen.has(sigId))continue;
+          S.pollSeen.add(sigId);
+          if(S.pollSeen.size>200)S.pollSeen=new Set([...S.pollSeen].slice(-100));
+          await handleSignal(m,myId,peerId,role);
+        }
+      }
+    }catch(e){/*ignore*/}
+    if(stopped||S.dc&&S.dc.readyState==="open")break;
+    await new Promise(r=>setTimeout(r,role==="guest"?1500:2000));
+  }
+}
+
+async function handleSignal(m,myId,peerId,role){
+  // m has {src,dst,type,payload}
+  if(m.type==="open"&&role==="host"&&!S.pc){
+    // a guest appeared. create PC + send offer
+    peerId=m.src;
+    await dbPut(CFG,{k:"pair",v:{myId,peerId,role:"host",ts:Date.now()}});
+    const pc=new RTCPeerConnection({iceServers:[{urls:"stun:stun.l.google.com:19302"}]});
+    const dc=pc.createDataChannel("moon",{ordered:true});
+    wireDC(dc);
+    S.pc=pc;
+    pc.onicecandidate=async ev=>{
+      if(!ev.candidate)return;
+      try{await fetch("https://0.peerjs.com/peerjs/id/"+myId+"/"+peerId+"/candidate?ts="+Date.now(),{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({type:"candidate",src:myId,dst:peerId,payload:ev.candidate})})}catch(e){}
+    };
+    try{
+      const offer=await pc.createOffer();await pc.setLocalDescription(offer);
+      await fetch("https://0.peerjs.com/peerjs/id/"+myId+"/"+peerId+"/offer?ts="+Date.now(),{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({type:"offer",src:myId,dst:peerId,payload:offer})});
+      setStatus("sent offer, waiting for her reply…","wait");
+    }catch(e){console.warn(e);setStatus("broker unreachable — try manual","err");}
+  }else if(m.type==="offer"&&role==="guest"&&m.src===peerId&&!S.pc){
+    // we received an offer — answer
+    const pc=new RTCPeerConnection({iceServers:[[{urls:"stun:stun.l.google.com:19302"}]});
+    pc.ondatachannel=ev=>{wireDC(ev.channel);S.pc=pc};
+    S.pc=pc;
+    pc.onicecandidate=async ev=>{
+      if(!ev.candidate)return;
+      try{await fetch("https://0.peerjs.com/peerjs/id/"+myId+"/"+peerId+"/candidate?ts="+Date.now(),{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({type:"candidate",src:myId,dst:peerId,payload:ev.candidate})})}catch(e){}
+    };
+    try{
+      await pc.setRemoteDescription(new RTCSessionDescription(m.payload));
+      const ans=await pc.createAnswer();await pc.setLocalDescription(ans);
+      await fetch("https://0.peerjs.com/peerjs/id/"+myId+"/"+peerId+"/answer?ts="+Date.now(),{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({type:"answer",src:myId,dst:peerId,payload:ans})});
+      setStatus("connected","wait");
+    }catch(e){console.warn(e);setStatus("offer failed — use manual","err")}
+  }else if(m.type==="answer"&&S.pc){
+    try{await S.pc.setRemoteDescription(new RTCSessionDescription(m.payload));setStatus("connected","wait")}catch(e){console.warn(e)}
+  }else if(m.type==="candidate"&&S.pc){
+    try{await S.pc.addIceCandidate(new RTCIceCandidate(m.payload))}catch(e){}
+  }
+}
+
+function wireDC(dc){
+  S.dc=dc;
+  dc.onopen=()=>{
+    setStatus("connected","on");
+    if(S.pollTimer)S.pollTimer();S.pollTimer=null;
+    setTimeout(enterChat,200);
+  };
+  dc.onmessage=async ev=>{
+    let data;try{data=JSON.parse(ev.data)}catch{return};
+    if(data.t==="m"){
+      try{const m=await decrypt({iv:data.iv,ct:data.ct},S.key);renderMsg(m,"them")}catch(e){console.warn("decrypt fail",e)}
+    }else if(data.t==="read"){markRead(data.id)}
+  };
+  dc.onclose=()=>{setStatus("peer left","err");S.dc=null};
+}
+
+// ===== MANUAL HANDSHAKE =====
+let manualPC=null;
+$("#manualBtn").addEventListener("click",()=>{
+  const show=$("#manualArea").style.display!=="flex";
+  $("#manualArea").style.display=show?"flex":"none";
+  $("#manualBtn").textContent=show?"hide manual":"use a pairing code instead";
+});
+
+$("#manualCreate").addEventListener("click",async()=>{
+  if(!S.key){toast("unlock first");return}
+  try{
+    manualPC=new RTCPeerConnection({iceServers:[{urls:"stun:stun.l.google.com:19302"}]});
+    const dc=manualPC.createDataChannel("moon",{ordered:true});
+    manualPC.ondatachannel=ev=>wireDC(ev.channel);
+    wireDC(dc);  // for initiator, dc is local
+    manualPC.onicecandidate=ev=>{if(!ev.candidate)return;const s=b64(enc.encode(JSON.stringify({sdp:manualPC.localDescription})));$("#manualOffer").value=s};
+    S.pc=manualPC;
+    const offer=await manualPC.createOffer();await manualPC.setLocalDescription(offer);
+    await new Promise(r=>{if(manualPC.iceGatheringState==="complete")return r();manualPC.onicegatheringstatechange=()=>{if(manualPC.iceGatheringState==="complete")r()}});
+    const s=b64(enc.encode(JSON.stringify({sdp:manualPC.localDescription})));
+    $("#manualOffer").value=s;
+    toast("copy the offer, send it to her");
+  }catch(e){toast("manual error");console.warn(e)}
+});
+$("#manualAccept").addEventListener("click",async()=>{
+  const raw=$("#manualOfferIn").value.trim();
+  if(!raw){toast("paste her offer first");return}
+  if(!S.key){toast("unlock first");return}
+  try{
+    const obj=JSON.parse(dec.decode(unb64(raw)));
+    manualPC=new RTCPeerConnection({iceServers:[{urls:"stun:stun.l.google.com:19302"}]});
+    manualPC.ondatachannel=ev=>wireDC(ev.channel);
+    manualPC.onicecandidate=ev=>{if(!ev.candidate)return;$("#manualAnswer").value=b64(enc.encode(JSON.stringify({sdp:manualPC.localDescription})))};
+    S.pc=manualPC;
+    await manualPC.setRemoteDescription(new RTCSessionDescription(obj.sdp));
+    const ans=await manualPC.createAnswer();await manualPC.setLocalDescription(ans);
+    await new Promise(r=>{if(manualPC.iceGatheringState==="complete")return r();manualPC.onicegatheringstatechange=()=>{if(manualPC.iceGatheringState==="complete")r()}});
+    $("#manualAnswer").value=b64(enc.encode(JSON.stringify({sdp:manualPC.localDescription})));
+    toast("copy the answer, send it to her");
+  }catch(e){toast("bad offer format");console.warn(e)}
+});
+$("#manualAnswerBtn").addEventListener("click",async()=>{
+  const raw=$("#manualAnswer").value.trim();
+  if(!raw||!manualPC){toast("generate an offer or paste hers first");return}
+  try{
+    const obj=JSON.parse(dec.decode(unb64(raw)));
+    await manualPC.setRemoteDescription(new RTCSessionDescription(obj.sdp));
+    toast("connected!");
+  }catch(e){toast("bad answer");console.warn(e)}
+});
+
+// ===== MESSAGES =====
+async function saveMsg(m){const c=await encrypt(m,S.key);await dbPut(MSG,{id:m.id,iv:c.iv,ct:c.ct,ts:m.ts,from:m.from})}
+async function loadMsg(){
+  const all=await dbAll(MSG);const out=[];
+  for(const r of all){try{const m=await decrypt({iv:r.iv,ct:r.ct},S.key);out.push({...m,id:r.id,ts:r.ts})}catch{}}
+  return out.sort((a,b)=>a.ts-b.ts);
+}
+$("#msgInput").addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();send()}});
+$("#msgInput").addEventListener("input",()=>{const t=$("#msgInput");t.style.height="auto";t.style.height=Math.min(140,t.scrollHeight)+"px"});
+$("#sendBtn").addEventListener("click",send);
+$("#fileInput").addEventListener("change",async e=>{
+  const f=e.target.files[0];if(!f)return;
+  if(f.size>100*1024*1024){toast("too big — max 100mb");e.target.value="";return}
+  const r=new FileReader();
+  r.onload=async()=>{
+    const isV=f.type.startsWith("video/"),isI=f.type.startsWith("image/");
+    if(!isV&&!isI){toast("images or videos only");return}
+    const m={id:ID(),type:isV?"video":"image",dataUrl:r.result,ts:Date.now(),from:"me",fileName:f.name,fileSize:f.size};
+    await saveMsg(m);renderMsg(m,"me");sendWire(m);
+  };
+  r.readAsDataURL(f);e.target.value="";
+});
+async function send(){
+  const txt=$("#msgInput").value.trim();if(!txt)return;
+  $("#msgInput").value="";$("#msgInput").style.height="auto";
+  const m={id:ID(),type:"text",text:txt,ts:Date.now(),from:"me"};
+  await saveMsg(m);renderMsg(m,"me");sendWire(m);
+}
+async function sendWire(m){
+  if(!S.dc||S.dc.readyState!=="open"){toast("not connected");return}
+  const c=await encrypt(m,S.key);
+  try{S.dc.send(JSON.stringify({t:"m",iv:c.iv,ct:c.ct,id:m.id,ts:m.ts}))}catch(e){toast("send fail")}
+}
+function renderMsg(m,who){
+  const list=$("#messages");
+  const d=document.createElement("div");d.className="msg from-"+who;d.dataset.id=m.id;
+  const b=document.createElement("div");b.className="bubble";
+  if(m.type==="image"){b.classList.add("img");const i=document.createElement("img");i.src=m.dataUrl;i.onclick=()=>openMedia("img",m.dataUrl);b.appendChild(i)}
+  else if(m.type==="video"){b.classList.add("vid");const v=document.createElement("video");v.src=m.dataUrl;v.controls=true;b.appendChild(v)}
+  else{b.textContent=m.text}
+  d.appendChild(b);
+  const ml=document.createElement("div");ml.className="meta-line";
+  const t=new Date(m.ts);const hh=String(t.getHours()).padStart(2,"0"),mm=String(t.getMinutes()).padStart(2,"0");
+  ml.innerHTML=`<span>${hh}:${mm}</span>`+(who==="me"?`<span class="read wait" data-rid="${m.id}">sent</span>`:"");
+  d.appendChild(ml);list.appendChild(d);
+  $("#messages").scrollTo({top:9e9,behavior:"smooth"});
+}
+function markRead(id){const e=document.querySelector(`[data-rid="${id}"]`);if(e){e.classList.remove("wait");e.classList.add("read");e.textContent="read"}}
+function openMedia(k,u){const w=$("#mediaWrap");w.innerHTML="";const e=k==="img"?document.createElement("img"):document.createElement("video");e.src=u;if(k!=="img")e.controls=true;w.appendChild(e);$("#mediaModal").classList.add("on")}
+$("#mediaModal").addEventListener("click",()=>$("#mediaModal").classList.remove("on"));
+async function enterChat(){
+  screen("chat");
+  const msgs=await loadMsg();
+  const list=$("#messages");list.innerHTML="";
+  for(const m of msgs)renderMsg(m,m.from==="me"?"me":"them");
+  $("#messages").scrollTo({top:9e9});
+}
+$("#exitBtn").addEventListener("click",()=>{
+  if(confirm("are you sure? (does NOT wipe messages)")){
+    if(S.dc)try{S.dc.close()}catch(e){};
+    screen("lock");$("#pw").value="";
+  }
+});
+
+// ===== QR (vendored lib renders if loaded, else fallback text) =====
+function renderQR(box,text){
+  box.innerHTML="";
+  if(typeof qrcode==="function"){
+    try{
+      const q=qrcode(0,"L");q.addData(text);q.make();
+      const n=q.getModuleCount();const s=Math.floor(200/n);
+      const c=document.createElement("canvas");c.width=n*s;c.height=n*s;
+      const ctx=c.getContext("2d");ctx.fillStyle="#000";ctx.fillRect(0,0,c.width,c.height);ctx.fillStyle="#fff";
+      for(let y=0;y<n;y++)for(let x=0;x<n;x++)if(q.isDark(y,x))ctx.fillRect(x*s,y*s,s,s);
+      box.appendChild(c);return;
+    }catch(e){}
+  }
+  box.style.cssText+=";background:#fff;color:#000;display:flex;align-items:center;justify-content:center;font-size:11px;padding:10px;line-height:1.4;text-align:center;word-break:break-all;";
+  box.textContent=text;
+}
+
+// ===== MOON TRIPLE TAP = PANIC =====
+let moonTaps=0,moonT=0;
+$("#moon").addEventListener("click",()=>{
+  moonTaps++;clearTimeout(moonT);
+  moonT=setTimeout(()=>{moonTaps=0},800);
+  if(moonTaps>=3){
+    moonTaps=0;
+    if(confirm("WIPE everything? cannot undo.")){
+      try{indexedDB.deleteDatabase(DBN)}catch(e){}
+      setTimeout(()=>location.href=location.origin+location.pathname,300);
+    }
+  }
+});
+
+// ===== KONAMI =====
+const K=["ArrowUp","ArrowUp","ArrowDown","ArrowDown","ArrowLeft","ArrowRight","ArrowLeft","ArrowRight","b","a"];
+let kI=0;
+window.addEventListener("keydown",e=>{
+  const k=e.key.length===1?e.key.toLowerCase():e.key;
+  if(k===K[kI]){kI++;if(kI===K.length){kI=0;for(let i=0;i<40;i++)setTimeout(spawnEmber,i*30);toast("🌙 the moon remembers you both",2500)}}
+  else kI=k===K[0]?1:0;
+});
+
+// ===== SW =====
+if("serviceWorker"in navigator&&location.protocol!=="file:"){
+  window.addEventListener("load",()=>{navigator.serviceWorker.register("./sw.js").catch(()=>{})});
+}
